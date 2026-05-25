@@ -33,12 +33,12 @@ memory-serve is designed to work with [axum](https://github.com/tokio-rs/axum)
 
 ## Usage
 
-Call `load_directory` with a relative path from your `build.rs`. See https://doc.rust-lang.org/cargo/reference/build-scripts.html for more information about build scripts. See the example project in the memory-serve repository
+Call `load_directory` with a relative path from your `build.rs`. See [the Cargo book](https://doc.rust-lang.org/cargo/reference/build-scripts.html) for more information about build scripts. See the example project in the memory-serve repository
 for an example `build.rs`. Calling `load_directory` makes sure that your assets are loaded at compile time.
 
 Call the `load!` macro from your application to create a `MemoryServe` instance.
 
-When an instance of `MemoryServe` is created, we can bind these to your axum instance.
+When an instance of `MemoryServe` is created, we can bind it to your axum instance.
 Calling [`MemoryServe::into_router()`] on the `MemoryServe` instance produces an axum
 [`Router`](https://docs.rs/axum/latest/axum/routing/struct.Router.html) that
 can either be merged in another `Router` or used directly in a server by
@@ -49,13 +49,12 @@ calling [`Router::into_make_service()`](https://docs.rs/axum/latest/axum/routing
 Multiple directories can be included using `load_names_directories` from your `build.rs` script.
 This takes a list of tuples, with the name and the path of your asset directories.
 
-You can use the names as specified in the `load_names_directories` call to load the specifix
-MemoryService by passing the name as string to the `load!` macro.
+You can use the names as specified in the `load_names_directories` call to load the specific
+`MemoryServe` instance by passing the name as a string to the `load!` macro.
 
 ### Features
 
 Use the `force-embed` feature flag to always include assets in the binary - also in debug builds.
-Note that this feature
 
 ### Environment variables
 
@@ -100,10 +99,10 @@ the following configuration methods:
 | ---------------------------------------- | ----------------------- | ---------------------------------------------------------- |
 | [`MemoryServe::index_file`]              | `Some("/index.html")`   | Which file to serve on the route "/"                       |
 | [`MemoryServe::index_on_subdirectories`] | `false`                 | Whether to serve the corresponding index in subdirectories |
-| [`MemoryServe::fallback`]                | `None`                  | Which file to serve if no routed matched the request       |
-| [`MemoryServe::fallback_status`]         | `StatusCode::NOT_FOUND` | The HTTP status code to routes that did not match          |
-| [`MemoryServe::enable_gzip`]             | `true`                  | Allow to serve gzip encoded files                          |
-| [`MemoryServe::enable_brotli`]           | `true`                  | Allow to serve brotli encoded files                        |
+| [`MemoryServe::fallback`]                | `None`                  | Which file to serve if no route matched the request        |
+| [`MemoryServe::fallback_status`]         | `StatusCode::NOT_FOUND` | The HTTP status code to serve for routes that did not match |
+| [`MemoryServe::enable_gzip`]             | `true`                  | Allow serving gzip encoded files                           |
+| [`MemoryServe::enable_brotli`]           | `true`                  | Allow serving brotli encoded files                         |
 | [`MemoryServe::html_cache_control`]      | `CacheControl::Short`   | Cache control header to serve on HTML files                |
 | [`MemoryServe::cache_control`]           | `CacheControl::Medium`  | Cache control header to serve on other files               |
 | [`MemoryServe::add_alias`]               | `[]`                    | Create a route / file alias                                |
@@ -150,6 +149,6 @@ There are 5 different values to choose from for the cache-control settings:
 | ------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------- |
 | [`CacheControl::Long`]    | clients can keep assets that have cache busting for a year                          | `max-age=31536000, immutable`                  |
 | [`CacheControl::Medium`]  | assets without cache busting are revalidated after a day and can be kept for a week | `max-age=604800, stale-while-revalidate=86400` |
-| [`CacheControl::Short`]   | cache kept for max 5 minutes, only at the client (not in a proxy)                   | `max-age:300, private`                         |
+| [`CacheControl::Short`]   | cache kept for max 5 minutes, only at the client (not in a proxy)                   | `max-age=300, private`                         |
 | [`CacheControl::NoCache`] | do not cache if freshness is really vital                                           | `no-cache`                                     |
 | [`CacheControl::Custom`]  | Custom value                                                                        | _user defined_                                 |

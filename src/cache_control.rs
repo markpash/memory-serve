@@ -8,7 +8,7 @@ pub enum CacheControl {
     Long,
     /// assets without cache busting are revalidated after a day and can be kept for a week: `"max-age=604800, stale-while-revalidate=86400"`
     Medium,
-    /// cache kept for max 5 minutes, only at the client (not in a proxy): `"max-age:300, private"`
+    /// cache kept for max 5 minutes, only at the client (not in a proxy): `"max-age=300, private"`
     Short,
     /// do not cache if freshness is really vital: `"no-cache"`
     NoCache,
@@ -22,7 +22,7 @@ impl CacheControl {
         let value = match self {
             Self::Long => "max-age=31536000, immutable",
             Self::Medium => "max-age=604800, stale-while-revalidate=86400",
-            Self::Short => "max-age:300, private",
+            Self::Short => "max-age=300, private",
             Self::NoCache => "no-cache",
             Self::Custom(value) => value,
         };

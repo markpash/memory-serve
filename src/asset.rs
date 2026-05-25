@@ -1,7 +1,7 @@
 use axum::{
     http::{
         HeaderMap, HeaderName, HeaderValue, StatusCode,
-        header::{CONTENT_ENCODING, CONTENT_TYPE, ETAG, IF_NONE_MATCH},
+        header::{CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, ETAG, IF_NONE_MATCH, VARY},
     },
     response::{IntoResponse, Response},
 };
@@ -12,7 +12,7 @@ use crate::{
     options::ServeOptions,
     util::{
         compression::{compress_brotli, compress_gzip, decompress_brotli},
-        headers::{content_length, supports_encoding},
+        headers::supports_encoding,
     },
 };
 
@@ -25,6 +25,9 @@ const GZIP_ENCODING: &str = "gzip";
 
 const GZIP_HEADER: (HeaderName, HeaderValue) =
     (CONTENT_ENCODING, HeaderValue::from_static(GZIP_ENCODING));
+
+const VARY_HEADER: (HeaderName, HeaderValue) =
+    (VARY, HeaderValue::from_static("accept-encoding"));
 
 /// Preferred compression for a dynamically served asset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,67 +77,51 @@ struct AssetResponse<'t, B> {
 impl<B: IntoResponse> AssetResponse<'_, B> {
     /// Construct an Axum `Response` from the gathered asset data.
     fn into_response(self) -> Response {
-        let content_type = self.asset.content_type();
-        let cache_control = self.asset.cache_control(self.options);
-        let etag_header = (ETAG, HeaderValue::from_str(self.etag).unwrap());
+        // Strong validator per RFC 7232: wrap the SHA-256 hex digest in quotes.
+        let quoted_etag = format!("\"{}\"", self.etag);
+        let varies_by_encoding = self.asset.should_compress
+            && (self.options.enable_brotli || self.options.enable_gzip);
+
+        let mut headers = HeaderMap::new();
+        headers.extend([
+            self.asset.content_type(),
+            self.asset.cache_control(self.options),
+            (ETAG, HeaderValue::from_str(&quoted_etag).unwrap()),
+        ]);
+        if varies_by_encoding {
+            headers.extend([VARY_HEADER]);
+        }
 
         if let Some(if_none_match) = self.headers.get(IF_NONE_MATCH)
-            && if_none_match == self.etag
+            && if_none_match.as_bytes() == quoted_etag.as_bytes()
         {
-            return (
-                StatusCode::NOT_MODIFIED,
-                [content_type, cache_control, etag_header],
-            )
-                .into_response();
+            return (StatusCode::NOT_MODIFIED, headers).into_response();
         }
 
         if self.options.enable_brotli
             && self.brotli_bytes_len > 0
             && supports_encoding(self.headers, BROTLI_ENCODING)
         {
-            return (
-                self.status,
-                [
-                    content_length(self.brotli_bytes_len),
-                    BROTLI_HEADER,
-                    content_type,
-                    cache_control,
-                    etag_header,
-                ],
-                self.brotli_bytes,
-            )
-                .into_response();
+            headers.extend([
+                (CONTENT_LENGTH, HeaderValue::from(self.brotli_bytes_len)),
+                BROTLI_HEADER,
+            ]);
+            return (self.status, headers, self.brotli_bytes).into_response();
         }
 
         if self.options.enable_gzip
             && self.gzip_bytes_len > 0
             && supports_encoding(self.headers, GZIP_ENCODING)
         {
-            return (
-                self.status,
-                [
-                    content_length(self.gzip_bytes_len),
-                    GZIP_HEADER,
-                    content_type,
-                    cache_control,
-                    etag_header,
-                ],
-                self.gzip_bytes,
-            )
-                .into_response();
+            headers.extend([
+                (CONTENT_LENGTH, HeaderValue::from(self.gzip_bytes_len)),
+                GZIP_HEADER,
+            ]);
+            return (self.status, headers, self.gzip_bytes).into_response();
         }
 
-        (
-            self.status,
-            [
-                content_length(self.bytes_len),
-                content_type,
-                cache_control,
-                etag_header,
-            ],
-            self.bytes,
-        )
-            .into_response()
+        headers.extend([(CONTENT_LENGTH, HeaderValue::from(self.bytes_len))]);
+        (self.status, headers, self.bytes).into_response()
     }
 }
 

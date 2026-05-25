@@ -319,7 +319,7 @@ mod tests {
         assert_eq!(code, 200);
         assert_eq!(
             etag,
-            "0639dc8aac157b58c74f65bbb026b2fd42bc81d9a0a64141df456fa23c214537"
+            "\"0639dc8aac157b58c74f65bbb026b2fd42bc81d9a0a64141df456fa23c214537\""
         );
 
         let (code, headers) = get(memory_router, "/index.html", "If-None-Match", etag).await;

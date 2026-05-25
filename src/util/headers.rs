@@ -1,7 +1,4 @@
-use axum::http::{
-    HeaderMap, HeaderName, HeaderValue,
-    header::{ACCEPT_ENCODING, CONTENT_LENGTH},
-};
+use axum::http::{HeaderMap, HeaderValue, header::ACCEPT_ENCODING};
 
 /// Check if the client supports the given encoding.
 pub(crate) fn supports_encoding(headers: &HeaderMap, encoding: &str) -> bool {
@@ -20,18 +17,16 @@ pub(crate) fn supports_encoding(headers: &HeaderMap, encoding: &str) -> bool {
             let mut parts = item.splitn(2, ";q=");
             let encoding = parts.next();
 
-            if parts.next() == Some("0") {
-                None
-            } else {
-                encoding
-            }
+            // Any q-value parsing to 0.0 (e.g. `0`, `0.0`, `0.000`) signals
+            // that the client does not accept the encoding.
+            let rejected = parts
+                .next()
+                .and_then(|q| q.parse::<f32>().ok())
+                .is_some_and(|q| q <= 0.0);
+
+            if rejected { None } else { encoding }
         })
         .any(|v| v == encoding || v == "*")
-}
-
-/// Build a `Content-Length` tuple for the given byte length.
-pub(crate) fn content_length(len: usize) -> (HeaderName, HeaderValue) {
-    (CONTENT_LENGTH, HeaderValue::from(len))
 }
 
 #[cfg(test)]
@@ -60,5 +55,13 @@ mod tests {
         assert!(!check("gzip", "zstd"));
         assert!(!check("gzip, compress, br", "zstd"));
         assert!(check("br;q=1.0, gzip;q=0.8, *;q=0.1", "zstd"));
+
+        // q=0 in any spelling means the client refuses that encoding.
+        assert!(!check("gzip;q=0", "gzip"));
+        assert!(!check("gzip;q=0.0", "gzip"));
+        assert!(!check("gzip;q=0.000", "gzip"));
+        assert!(!check("br;q=1.0, gzip;q=0.0", "gzip"));
+        assert!(!check("*;q=0", "gzip"));
+        assert!(!check("*;q=0.0", "gzip"));
     }
 }
