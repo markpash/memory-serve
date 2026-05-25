@@ -26,8 +26,7 @@ const GZIP_ENCODING: &str = "gzip";
 const GZIP_HEADER: (HeaderName, HeaderValue) =
     (CONTENT_ENCODING, HeaderValue::from_static(GZIP_ENCODING));
 
-const VARY_HEADER: (HeaderName, HeaderValue) =
-    (VARY, HeaderValue::from_static("accept-encoding"));
+const VARY_HEADER: (HeaderName, HeaderValue) = (VARY, HeaderValue::from_static("accept-encoding"));
 
 /// Preferred compression for a dynamically served asset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,8 +78,8 @@ impl<B: IntoResponse> AssetResponse<'_, B> {
     fn into_response(self) -> Response {
         // Strong validator per RFC 7232: wrap the SHA-256 hex digest in quotes.
         let quoted_etag = format!("\"{}\"", self.etag);
-        let varies_by_encoding = self.asset.should_compress
-            && (self.options.enable_brotli || self.options.enable_gzip);
+        let varies_by_encoding =
+            self.asset.should_compress && (self.options.enable_brotli || self.options.enable_gzip);
 
         let mut headers = HeaderMap::new();
         headers.extend([
