@@ -12,7 +12,7 @@ use crate::{
     options::ServeOptions,
     util::{
         compression::{compress_brotli, compress_gzip, decompress_brotli},
-        headers::supports_encoding,
+        headers::{encoding_qvalue, if_none_match_matches},
     },
 };
 
@@ -92,15 +92,29 @@ impl<B: IntoResponse> AssetResponse<'_, B> {
         }
 
         if let Some(if_none_match) = self.headers.get(IF_NONE_MATCH)
-            && if_none_match.as_bytes() == quoted_etag.as_bytes()
+            && let Ok(if_none_match) = if_none_match.to_str()
+            && if_none_match_matches(if_none_match, &quoted_etag)
         {
             return (StatusCode::NOT_MODIFIED, headers).into_response();
         }
 
-        if self.options.enable_brotli
-            && self.brotli_bytes_len > 0
-            && supports_encoding(self.headers, BROTLI_ENCODING)
-        {
+        // Offer brotli and/or gzip only when enabled and the compressed payload
+        // is actually available, then honor the client's preference (q-value).
+        let brotli_q = (self.options.enable_brotli && self.brotli_bytes_len > 0)
+            .then(|| encoding_qvalue(self.headers, BROTLI_ENCODING))
+            .flatten();
+        let gzip_q = (self.options.enable_gzip && self.gzip_bytes_len > 0)
+            .then(|| encoding_qvalue(self.headers, GZIP_ENCODING))
+            .flatten();
+
+        // Ties favour brotli, which generally compresses better.
+        let prefer_brotli = match (brotli_q, gzip_q) {
+            (Some(br), Some(gz)) => br >= gz,
+            (Some(_), None) => true,
+            _ => false,
+        };
+
+        if prefer_brotli {
             headers.extend([
                 (CONTENT_LENGTH, HeaderValue::from(self.brotli_bytes_len)),
                 BROTLI_HEADER,
@@ -108,10 +122,7 @@ impl<B: IntoResponse> AssetResponse<'_, B> {
             return (self.status, headers, self.brotli_bytes).into_response();
         }
 
-        if self.options.enable_gzip
-            && self.gzip_bytes_len > 0
-            && supports_encoding(self.headers, GZIP_ENCODING)
-        {
+        if gzip_q.is_some() {
             headers.extend([
                 (CONTENT_LENGTH, HeaderValue::from(self.gzip_bytes_len)),
                 GZIP_HEADER,
@@ -156,7 +167,14 @@ impl Asset {
         };
 
         let brotli_bytes = if self.should_compress && options.enable_brotli {
-            self.bytes.unwrap_or_default()
+            if self.is_compressed {
+                // The embedded bytes are already brotli compressed.
+                self.bytes.unwrap_or_default()
+            } else {
+                // The embedded bytes are stored uncompressed (e.g. `force-embed`
+                // in debug builds), so compress them on the fly.
+                Box::new(compress_brotli(uncompressed).unwrap_or_default()).leak()
+            }
         } else {
             Default::default()
         };
@@ -179,15 +197,22 @@ impl Asset {
             return OnDemandEncoding::Identity;
         }
 
-        if options.enable_brotli && supports_encoding(headers, BROTLI_ENCODING) {
-            return OnDemandEncoding::Brotli;
-        }
+        let brotli_q = options
+            .enable_brotli
+            .then(|| encoding_qvalue(headers, BROTLI_ENCODING))
+            .flatten();
+        let gzip_q = options
+            .enable_gzip
+            .then(|| encoding_qvalue(headers, GZIP_ENCODING))
+            .flatten();
 
-        if options.enable_gzip && supports_encoding(headers, GZIP_ENCODING) {
-            return OnDemandEncoding::Gzip;
+        // Ties favour brotli, which generally compresses better.
+        match (brotli_q, gzip_q) {
+            (Some(br), Some(gz)) if br >= gz => OnDemandEncoding::Brotli,
+            (Some(_), None) => OnDemandEncoding::Brotli,
+            (_, Some(_)) => OnDemandEncoding::Gzip,
+            _ => OnDemandEncoding::Identity,
         }
-
-        OnDemandEncoding::Identity
     }
 
     /// Compress the provided bytes according to the negotiated encoding.

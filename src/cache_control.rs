@@ -30,3 +30,33 @@ impl CacheControl {
         (CACHE_CONTROL, HeaderValue::from_static(value))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::CacheControl;
+    use axum::http::header::CACHE_CONTROL;
+
+    fn header_value(cache_control: CacheControl) -> String {
+        let (name, value) = cache_control.as_header();
+        assert_eq!(name, CACHE_CONTROL);
+        value.to_str().unwrap().to_owned()
+    }
+
+    #[test]
+    fn as_header_values() {
+        assert_eq!(
+            header_value(CacheControl::Long),
+            "max-age=31536000, immutable"
+        );
+        assert_eq!(
+            header_value(CacheControl::Medium),
+            "max-age=604800, stale-while-revalidate=86400"
+        );
+        assert_eq!(header_value(CacheControl::Short), "max-age=300, private");
+        assert_eq!(header_value(CacheControl::NoCache), "no-cache");
+        assert_eq!(
+            header_value(CacheControl::Custom("max-age=42")),
+            "max-age=42"
+        );
+    }
+}

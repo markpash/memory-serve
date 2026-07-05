@@ -33,6 +33,21 @@ memory-serve is designed to work with [axum](https://github.com/tokio-rs/axum)
 
 ## Usage
 
+Because memory-serve is used both from your `build.rs` (to load assets at
+compile time) and from your application code (to serve them), it must be added
+to **both** `[dependencies]` and `[build-dependencies]` in your `Cargo.toml`:
+
+```toml
+[dependencies]
+memory-serve = "2"
+
+[build-dependencies]
+memory-serve = "2"
+```
+
+Omitting the `[build-dependencies]` entry results in a compile error from the
+build script, like `error[E0433]: cannot find module or crate 'memory_serve'`.
+
 Call `load_directory` with a relative path from your `build.rs`. See [the Cargo book](https://doc.rust-lang.org/cargo/reference/build-scripts.html) for more information about build scripts. See the example project in the memory-serve repository
 for an example `build.rs`. Calling `load_directory` makes sure that your assets are loaded at compile time.
 
@@ -101,14 +116,17 @@ the following configuration methods:
 | [`MemoryServe::index_on_subdirectories`] | `false`                 | Whether to serve the corresponding index in subdirectories |
 | [`MemoryServe::fallback`]                | `None`                  | Which file to serve if no route matched the request        |
 | [`MemoryServe::fallback_status`]         | `StatusCode::NOT_FOUND` | The HTTP status code to serve for routes that did not match |
-| [`MemoryServe::enable_gzip`]             | `true`                  | Allow serving gzip encoded files                           |
-| [`MemoryServe::enable_brotli`]           | `true`                  | Allow serving brotli encoded files                         |
+| [`MemoryServe::enable_gzip`]             | `true` (release) [^1]   | Allow serving gzip encoded files                           |
+| [`MemoryServe::enable_brotli`]           | `true` (release) [^1]   | Allow serving brotli encoded files                         |
 | [`MemoryServe::html_cache_control`]      | `CacheControl::Short`   | Cache control header to serve on HTML files                |
 | [`MemoryServe::cache_control`]           | `CacheControl::Medium`  | Cache control header to serve on other files               |
 | [`MemoryServe::add_alias`]               | `[]`                    | Create a route / file alias                                |
 | [`MemoryServe::enable_clean_url`]        | `false`                 | Enable clean URLs                                          |
 
 See [`Cache control`](#cache-control) for the cache control options.
+
+[^1]: Compression defaults to enabled in release builds and disabled in debug
+builds (where assets are served dynamically).
 
 ## Logging
 

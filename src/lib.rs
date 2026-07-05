@@ -5,7 +5,7 @@ use axum::{
     routing::get,
 };
 use std::future::ready;
-use tracing::info;
+use tracing::{info, warn};
 
 mod asset;
 mod build;
@@ -41,8 +41,9 @@ impl MemoryServe {
     }
 
     /// Which static file to serve on the route "/" (the index)
-    /// The path (or route) should be relative to the directory set with
-    /// the `ASSET_DIR` variable, but prepended with a slash.
+    /// The path (or route) should be relative to the asset directory passed
+    /// to `load_directory` (or similar) in your `build.rs`, but prepended with
+    /// a slash.
     /// By default this is `Some("/index.html")`
     pub fn index_file(mut self, index_file: Option<&'static str>) -> Self {
         self.options.index_file = index_file;
@@ -60,8 +61,9 @@ impl MemoryServe {
 
     /// Which static file to serve when no other routes are matched, also see
     /// [fallback](https://docs.rs/axum/latest/axum/routing/struct.Router.html#method.fallback)
-    /// The path (or route) should be relative to the directory set with
-    /// the `ASSET_DIR` variable, but prepended with a slash.
+    /// The path (or route) should be relative to the asset directory passed
+    /// to `load_directory` (or similar) in your `build.rs`, but prepended with
+    /// a slash.
     /// By default this is `None`, which means axum will return an empty
     /// response with a HTTP 404 status code when no route matches.
     pub fn fallback(mut self, fallback: Option<&'static str>) -> Self {
@@ -135,6 +137,26 @@ impl MemoryServe {
     {
         let mut router = axum::Router::new();
         let options = Box::leak(Box::new(self.options));
+
+        // Warn about configuration that silently does nothing because it
+        // references a route that no asset provides.
+        let route_exists = |route: &str| self.assets.iter().any(|a| a.route == route);
+
+        if let Some(index) = options.index_file
+            && !route_exists(index)
+        {
+            warn!("index_file {index} does not match any asset route, \"/\" will not be served");
+        }
+        if let Some(fallback) = options.fallback
+            && !route_exists(fallback)
+        {
+            warn!("fallback {fallback} does not match any asset route, it will be ignored");
+        }
+        for (from, to) in self.aliases.iter() {
+            if !route_exists(to) {
+                warn!("alias {from} points to {to}, which does not match any asset route");
+            }
+        }
 
         for asset in self.assets {
             let (uncompressed_bytes, brotli_bytes, gzip_bytes) = asset.leak_bytes(options);
@@ -392,6 +414,35 @@ mod tests {
 
         assert_eq!(code, 200);
         assert_eq!(length.parse::<i32>().unwrap(), 437);
+    }
+
+    #[tokio::test]
+    async fn encoding_preference() {
+        // Both encodings enabled; the client prefers gzip over brotli.
+        let memory_router = test_load!()
+            .enable_brotli(true)
+            .enable_gzip(true)
+            .into_router();
+        let (code, headers) = get(
+            memory_router.clone(),
+            "/index.html",
+            "accept-encoding",
+            "br;q=0.1, gzip;q=1.0",
+        )
+        .await;
+        assert_eq!(code, 200);
+        assert_eq!(get_header(&headers, &CONTENT_ENCODING), "gzip");
+
+        // The reverse preference selects brotli.
+        let (code, headers) = get(
+            memory_router.clone(),
+            "/index.html",
+            "accept-encoding",
+            "br;q=0.8, gzip;q=0.7",
+        )
+        .await;
+        assert_eq!(code, 200);
+        assert_eq!(get_header(&headers, &CONTENT_ENCODING), "br");
     }
 
     #[tokio::test]

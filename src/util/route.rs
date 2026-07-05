@@ -54,14 +54,34 @@ pub(crate) fn path_to_content_type(path: &Path) -> Option<String> {
     Some(
         mime_guess::from_ext(&ext.to_string_lossy())
             .first_raw()
-            .unwrap_or(mime::APPLICATION_OCTET_STREAM.to_string().as_str())
+            .unwrap_or(mime::APPLICATION_OCTET_STREAM.as_ref())
             .to_owned(),
     )
 }
 
 #[cfg(test)]
 mod test {
-    use super::path_to_route;
+    use super::{path_to_content_type, path_to_route};
+    use std::path::Path;
+
+    #[test]
+    fn test_path_to_content_type() {
+        let content_type = |p: &str| path_to_content_type(Path::new(p));
+
+        assert_eq!(
+            content_type("/foo/index.html").as_deref(),
+            Some("text/html")
+        );
+        assert_eq!(content_type("/foo/style.css").as_deref(), Some("text/css"));
+        assert_eq!(content_type("/foo/icon.jpg").as_deref(), Some("image/jpeg"));
+        // Unknown extensions fall back to a generic binary type.
+        assert_eq!(
+            content_type("/foo/data.unknownext").as_deref(),
+            Some("application/octet-stream")
+        );
+        // Without an extension there is no content type.
+        assert_eq!(content_type("/foo/README"), None);
+    }
 
     #[test]
     fn test_path_to_route() {
