@@ -35,7 +35,15 @@ pub fn assets_to_code(
             should_compress,
         } = asset;
 
-        let is_compressed = compressed_bytes.is_some();
+        // Embedded bytes are compressed with brotli when the feature is
+        // enabled for the build-dependency, with gzip otherwise.
+        let compression = if compressed_bytes.is_none() {
+            "None"
+        } else if cfg!(feature = "brotli") {
+            "Brotli"
+        } else {
+            "Gzip"
+        };
 
         let bytes = if !embed {
             "None".to_string()
@@ -56,7 +64,7 @@ pub fn assets_to_code(
                 content_type: \"{content_type}\",
                 etag: \"{etag}\",
                 bytes: {bytes},
-                is_compressed: {is_compressed},
+                compression: memory_serve::Compression::{compression},
                 should_compress: {should_compress},
             }},"
         ));

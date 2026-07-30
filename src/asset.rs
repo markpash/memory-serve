@@ -8,10 +8,12 @@ use axum::{
 use fs_err as fs;
 use tracing::debug;
 
+#[cfg(feature = "brotli")]
+use crate::util::compression::{compress_brotli, decompress_brotli};
 use crate::{
     options::ServeOptions,
     util::{
-        compression::{compress_brotli, compress_gzip, decompress_brotli},
+        compression::{compress_gzip, decompress_gzip},
         headers::{encoding_qvalue, if_none_match_matches},
     },
 };
@@ -39,6 +41,23 @@ enum OnDemandEncoding {
     Gzip,
 }
 
+/// Compression codec applied to the embedded bytes of an [`Asset`] at build
+/// time.
+///
+/// The `Brotli` variant is defined even when the `brotli` feature is
+/// disabled, so that a feature mismatch between the build-dependency and the
+/// runtime dependency produces a clear startup error instead of a confusing
+/// compile error inside generated code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Compression {
+    /// The bytes are embedded as-is.
+    None,
+    /// The bytes are embedded gzip compressed.
+    Gzip,
+    /// The bytes are embedded brotli compressed.
+    Brotli,
+}
+
 /// Represents a static asset that can be served
 #[derive(Debug)]
 pub struct Asset {
@@ -52,8 +71,8 @@ pub struct Asset {
     pub content_type: &'static str,
     /// Optional embedded bytes for the asset; `None` when dynamic loading is used.
     pub bytes: Option<&'static [u8]>,
-    /// Indicates if the embedded bytes are already brotli compressed.
-    pub is_compressed: bool,
+    /// The compression codec the embedded bytes are stored with.
+    pub compression: Compression,
     /// Whether the asset should be compressed before sending to clients.
     pub should_compress: bool,
 }
@@ -154,30 +173,48 @@ impl Asset {
         &self,
         options: &'static ServeOptions,
     ) -> (&'static [u8], &'static [u8], &'static [u8]) {
-        let mut uncompressed = self.bytes.unwrap_or_default();
+        let embedded = self.bytes.unwrap_or_default();
 
-        if self.is_compressed {
-            uncompressed = Box::new(decompress_brotli(uncompressed).unwrap_or_default()).leak()
-        }
+        let uncompressed: &'static [u8] = match self.compression {
+            Compression::None => embedded,
+            Compression::Gzip => Box::new(decompress_gzip(embedded).unwrap_or_default()).leak(),
+            #[cfg(feature = "brotli")]
+            Compression::Brotli => Box::new(decompress_brotli(embedded).unwrap_or_default()).leak(),
+            #[cfg(not(feature = "brotli"))]
+            Compression::Brotli => panic!(
+                "asset {} is embedded with brotli compression, but the \"brotli\" feature of \
+                 memory-serve is disabled; enable the feature for the runtime dependency or \
+                 disable it for the build-dependency as well",
+                self.route
+            ),
+        };
 
         let gzip_bytes = if self.should_compress && options.enable_gzip {
-            Box::new(compress_gzip(uncompressed).unwrap_or_default()).leak()
+            if self.compression == Compression::Gzip {
+                // The embedded bytes are already gzip compressed.
+                embedded
+            } else {
+                Box::new(compress_gzip(uncompressed).unwrap_or_default()).leak()
+            }
         } else {
             Default::default()
         };
 
+        #[cfg(feature = "brotli")]
         let brotli_bytes = if self.should_compress && options.enable_brotli {
-            if self.is_compressed {
+            if self.compression == Compression::Brotli {
                 // The embedded bytes are already brotli compressed.
-                self.bytes.unwrap_or_default()
+                embedded
             } else {
                 // The embedded bytes are stored uncompressed (e.g. `force-embed`
-                // in debug builds), so compress them on the fly.
+                // in debug builds) or gzip compressed, so compress them on the fly.
                 Box::new(compress_brotli(uncompressed).unwrap_or_default()).leak()
             }
         } else {
             Default::default()
         };
+        #[cfg(not(feature = "brotli"))]
+        let brotli_bytes: &'static [u8] = Default::default();
 
         (uncompressed, brotli_bytes, gzip_bytes)
     }
@@ -218,7 +255,14 @@ impl Asset {
     /// Compress the provided bytes according to the negotiated encoding.
     fn encode_dynamic_bytes(&self, bytes: &[u8], encoding: OnDemandEncoding) -> (Vec<u8>, Vec<u8>) {
         match encoding {
+            #[cfg(feature = "brotli")]
             OnDemandEncoding::Brotli => (compress_brotli(bytes).unwrap_or_default(), Vec::new()),
+            #[cfg(not(feature = "brotli"))]
+            OnDemandEncoding::Brotli => {
+                // `enable_brotli` is forced to `false` without the feature, so
+                // brotli is never negotiated.
+                unreachable!("brotli negotiated while the brotli feature is disabled")
+            }
             OnDemandEncoding::Gzip => (Vec::new(), compress_gzip(bytes).unwrap_or_default()),
             OnDemandEncoding::Identity => (Vec::new(), Vec::new()),
         }

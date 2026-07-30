@@ -14,6 +14,7 @@ they are read and compressed at request time.
 In release mode text-based files like HTML or javascript
 are compressed using [brotli](https://en.wikipedia.org/wiki/Brotli)
 at compile time and decompressed at startup, to minimize the binary size.
+When the `brotli` feature is disabled, gzip is used instead.
 
 All files are served with an
 [etag](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag)
@@ -71,6 +72,26 @@ You can use the names as specified in the `load_names_directories` call to load 
 
 Use the `force-embed` feature flag to always include assets in the binary - also in debug builds.
 
+The `brotli` feature (enabled by default) provides brotli compression. Disable
+it to serve assets in gzip-only mode and leave the brotli dependency out of
+your binary entirely - gzip is supported by effectively all clients, so this
+is a safe way to reduce binary size and compile time:
+
+```toml
+[dependencies]
+memory-serve = { version = "2", default-features = false }
+
+[build-dependencies]
+memory-serve = { version = "2", default-features = false }
+```
+
+Note that cargo resolves features for `[dependencies]` and
+`[build-dependencies]` independently, so the feature has to be disabled in
+both places. With the feature disabled, assets are embedded gzip compressed
+(instead of brotli compressed) in release builds. If the build-dependency
+embeds brotli assets while the runtime dependency has the `brotli` feature
+disabled, the server panics at startup with a message explaining the mismatch.
+
 ### Environment variables
 
 Use `MEMORY_SERVE_QUIET=1` to not print log messages at compile time.
@@ -117,7 +138,7 @@ the following configuration methods:
 | [`MemoryServe::fallback`]                | `None`                  | Which file to serve if no route matched the request        |
 | [`MemoryServe::fallback_status`]         | `StatusCode::NOT_FOUND` | The HTTP status code to serve for routes that did not match |
 | [`MemoryServe::enable_gzip`]             | `true` (release) [^1]   | Allow serving gzip encoded files                           |
-| [`MemoryServe::enable_brotli`]           | `true` (release) [^1]   | Allow serving brotli encoded files                         |
+| [`MemoryServe::enable_brotli`]           | `true` (release) [^1]   | Allow serving brotli encoded files (requires the `brotli` feature) |
 | [`MemoryServe::html_cache_control`]      | `CacheControl::Short`   | Cache control header to serve on HTML files                |
 | [`MemoryServe::cache_control`]           | `CacheControl::Medium`  | Cache control header to serve on other files               |
 | [`MemoryServe::add_alias`]               | `[]`                    | Create a route / file alias                                |

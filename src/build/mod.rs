@@ -77,7 +77,13 @@ pub(super) fn load_test_assets<P: Into<PathBuf>>(path: P) -> &'static [crate::As
         .into_iter()
         .map(|fa| crate::Asset {
             route: fa.route.leak(),
-            is_compressed: fa.compressed_bytes.is_some(),
+            compression: if fa.compressed_bytes.is_none() {
+                crate::Compression::None
+            } else if cfg!(feature = "brotli") {
+                crate::Compression::Brotli
+            } else {
+                crate::Compression::Gzip
+            },
             path: fa.path.to_string_lossy().to_string().leak(),
             etag: fa.etag.leak(),
             content_type: fa.content_type.leak(),

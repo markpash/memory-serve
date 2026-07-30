@@ -42,7 +42,7 @@ impl Default for ServeOptions {
             fallback_status: StatusCode::NOT_FOUND,
             html_cache_control: CacheControl::Short,
             cache_control: CacheControl::Medium,
-            enable_brotli: !cfg!(debug_assertions),
+            enable_brotli: cfg!(feature = "brotli") && !cfg!(debug_assertions),
             enable_gzip: !cfg!(debug_assertions),
             enable_clean_url: false,
         }

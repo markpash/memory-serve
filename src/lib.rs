@@ -15,7 +15,7 @@ mod options;
 mod util;
 
 pub use crate::{
-    asset::Asset,
+    asset::{Asset, Compression},
     build::{assets_to_code, load_directory, load_directory_with_embed, load_names_directories},
     cache_control::CacheControl,
 };
@@ -91,8 +91,15 @@ impl MemoryServe {
 
     /// Whether to enable brotli compression. When set to `true`, clients that
     /// accept brotli compressed files are served brotli compressed files.
+    ///
+    /// Requires the `brotli` crate feature (enabled by default); without it
+    /// this setting is ignored and a warning is logged.
     pub fn enable_brotli(mut self, enable_brotli: bool) -> Self {
-        self.options.enable_brotli = enable_brotli;
+        if enable_brotli && !cfg!(feature = "brotli") {
+            warn!("enable_brotli(true) is ignored: the \"brotli\" feature is disabled");
+        }
+
+        self.options.enable_brotli = enable_brotli && cfg!(feature = "brotli");
 
         self
     }
@@ -162,12 +169,16 @@ impl MemoryServe {
             let (uncompressed_bytes, brotli_bytes, gzip_bytes) = asset.leak_bytes(options);
 
             if !uncompressed_bytes.is_empty() {
-                if asset.is_compressed {
+                if asset.compression != Compression::None {
+                    let compressed_len = match asset.compression {
+                        Compression::Brotli => brotli_bytes.len(),
+                        _ => gzip_bytes.len(),
+                    };
                     info!(
                         "serving {} {} -> {} bytes (compressed)",
                         asset.route,
                         uncompressed_bytes.len(),
-                        brotli_bytes.len()
+                        compressed_len
                     );
                 } else {
                     info!("serving {} {} bytes", asset.route, uncompressed_bytes.len());
@@ -351,6 +362,7 @@ mod tests {
         assert_eq!(length.parse::<i32>().unwrap(), 0);
     }
 
+    #[cfg(feature = "brotli")]
     #[tokio::test]
     async fn brotli_compression() {
         let memory_router = test_load!().enable_brotli(true).into_router();
@@ -416,6 +428,7 @@ mod tests {
         assert_eq!(length.parse::<i32>().unwrap(), 437);
     }
 
+    #[cfg(feature = "brotli")]
     #[tokio::test]
     async fn encoding_preference() {
         // Both encodings enabled; the client prefers gzip over brotli.

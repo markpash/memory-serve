@@ -6,7 +6,7 @@ use walkdir::WalkDir;
 use crate::{
     options::{COMPRESS_TYPES, MIN_COMPRESS_SIZE},
     util::{
-        compression::compress_brotli,
+        compression::compress_embed,
         route::{path_to_content_type, path_to_route},
     },
 };
@@ -75,7 +75,7 @@ pub(super) fn list_assets(base_path: &Path, embed: bool, log: fn(&str)) -> Vec<F
             let enable_compression = embed && should_compress && !cfg!(debug_assertions);
 
             let compressed_bytes = if enable_compression {
-                compress_brotli(&bytes)
+                compress_embed(&bytes)
             } else {
                 None
             };

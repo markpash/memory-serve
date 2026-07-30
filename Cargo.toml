@@ -11,11 +11,13 @@ publish = true
 doctest = false
 
 [features]
+default = ["brotli"]
+brotli = ["dep:brotli"]
 force-embed = []
 
 [dependencies]
 axum = "0.8"
-brotli = "8.0"
+brotli = { version = "8.0", optional = true }
 flate2 = "1.1"
 fs-err = "3.3.0"
 mime_guess = "2.0"

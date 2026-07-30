@@ -40,6 +40,7 @@ jobs:
         prefix-key: cargo
         shared-key: check
     - run: cargo clippy --all-features --all-targets -- --deny clippy::all
+    - run: cargo clippy --no-default-features --all-targets -- --deny clippy::all
 
   test:
     runs-on: ubuntu-latest
@@ -50,6 +51,7 @@ jobs:
         prefix-key: cargo
         shared-key: test
     - run: cargo test --all-targets
+    - run: cargo test --all-targets --no-default-features
 
   test-release:
     runs-on: ubuntu-latest
@@ -60,3 +62,4 @@ jobs:
         prefix-key: cargo
         shared-key: test
     - run: cargo test --all-targets --release
+    - run: cargo test --all-targets --release --no-default-features
